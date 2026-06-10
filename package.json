@@ -1,0 +1,20 @@
+{
+  "name": "drive4apex",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Drive4Apex — a lightweight 3D arcade racing game for the browser. Hit every apex.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.170.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}

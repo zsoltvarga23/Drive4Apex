@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="description" content="Drive4Apex — hit every apex. A fast, lightweight 3D arcade racing game for desktop and mobile browsers." />
+  <meta name="application-name" content="Drive4Apex" />
+  <meta property="og:title" content="Drive4Apex — Arcade Racing" />
+  <meta property="og:description" content="Hit every apex. Race 3 tracks against AI rivals in your browser — no download, no install." />
+  <meta name="theme-color" content="#0b0e14" />
+  <title>Drive4Apex — Arcade Racing</title>
+  <!-- Logo mark: a racing line sweeping through the apex point of a corner -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%230b0e14'/%3E%3Cpath%20d='M12%2048%20C%2023%2020,%2041%2020,%2052%2048'%20fill='none'%20stroke='%2300e5ff'%20stroke-width='6'%20stroke-linecap='round'/%3E%3Ccircle%20cx='32'%20cy='27'%20r='5'%20fill='%23ffd166'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app">
+    <!-- Boot loader: visible before any JS executes, removed by the game once ready -->
+    <div id="boot-loader">
+      <svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M12 48 C 23 20, 41 20, 52 48" fill="none" stroke="#00e5ff" stroke-width="6" stroke-linecap="round" />
+        <circle cx="32" cy="27" r="5" fill="#ffd166" />
+      </svg>
+      <div class="boot-title wordmark">DRIVE<i>4</i><span>APEX</span></div>
+      <div class="boot-bar"><div class="boot-fill" id="boot-fill"></div></div>
+      <div class="boot-hint" id="boot-hint">Warming up engines…</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
