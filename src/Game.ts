@@ -70,6 +70,14 @@ export class Game implements GameAPI {
       if (this.state === 'racing' || this.state === 'countdown') this.pauseRace();
       else if (this.state === 'paused') this.resumeRace();
     };
+    // Instant restart is a time-trial staple: R resets the session at once.
+    this.input.onRestart = () => {
+      if (this.session?.config.mode !== 'timetrial') return;
+      if (this.state === 'racing' || this.state === 'paused' || this.state === 'countdown') {
+        this.menus.hidePause();
+        this.restartRace();
+      }
+    };
     this.input.onFirstInteraction = () => {
       this.audio.unlock();
       this.audio.startMusic();
@@ -133,7 +141,7 @@ export class Game implements GameAPI {
     this.menus.clearOverlays();
     this.lastConfig = cfg;
 
-    this.session = new RaceSession(cfg, this.save.settings.quality, this.hudParent, this.audio);
+    this.session = new RaceSession(cfg, this.save.settings.quality, this.hudParent, this.audio, this.save);
     this.buildQueue = this.session.buildSteps();
     this.buildTotal = this.buildQueue.length;
     this.menus.showLoading(this.buildQueue[0].label, 0);
@@ -257,6 +265,8 @@ export class Game implements GameAPI {
     this.countdownTime = -0.5; // brief beat before "3"
     this.countdownStep = -1;
     s.hud.show();
+    if (s.isFormulaEvent) s.hud.showMessage('★ FORMULA SERIES · GRAND PRIX WEEKEND ★', 3200);
+    else if (s.config.mode === 'timetrial') s.hud.showMessage('TIME TRIAL — PRESS R TO RESTART', 2600);
     this.audio.startEngine();
     this.state = 'countdown';
     this.updateTouchVisibility();
@@ -290,13 +300,13 @@ export class Game implements GameAPI {
     this.save.racesPlayed++;
     if (playerRow.position === 1) this.save.racesWon++;
 
-    // Best lap records only count for circuit races.
-    let newRecord = false;
-    const best = s.raceManager.playerBestLap;
-    if (s.config.mode === 'circuit' && isFinite(best)) {
-      const prev = this.save.bestLaps[s.config.trackId];
-      if (!prev || best < prev) {
-        this.save.bestLaps[s.config.trackId] = best;
+    // Lap records are written live by the session as laps complete;
+    // sprints additionally record the fastest total route time here.
+    let newRecord = s.newLapRecord;
+    if (s.config.mode === 'sprint' && !playerRow.estimated) {
+      const prev = this.save.bestSprints[s.config.trackId];
+      if (!prev || playerRow.time < prev) {
+        this.save.bestSprints[s.config.trackId] = playerRow.time;
         newRecord = true;
       }
     }

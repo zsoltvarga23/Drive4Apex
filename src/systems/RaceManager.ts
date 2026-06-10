@@ -3,7 +3,9 @@ import type { Track } from '../tracks/Track';
 import type { Vehicle } from '../vehicles/Vehicle';
 
 export interface RaceEvents {
-  onPlayerLap: (lapNumber: number, lapTime: number, isBest: boolean) => void;
+  /** Fired when the player completes a timing sector (0, 1 or 2). */
+  onPlayerSector: (sectorIndex: number, time: number) => void;
+  onPlayerLap: (lapNumber: number, lapTime: number, sectors: number[], isSessionBest: boolean) => void;
   onPlayerFinish: () => void;
 }
 
@@ -18,7 +20,13 @@ export interface Standing {
 
 /**
  * Owns race rules: lap counting (with anti-cheat reverse detection),
- * timing, live positions, and finish detection for circuit and sprint modes.
+ * timing, live positions, finish detection, and motorsport-style sector
+ * timing. Tracks are split into three equal sectors (S1/S2/S3 — shown as
+ * checkpoints in sprint mode); the player's crossings fire events that the
+ * session uses for PB highlights and lap deltas.
+ *
+ * Time trial mode sets lapsTotal to Infinity: the player laps forever and
+ * the race only ends when they quit.
  */
 export class RaceManager {
   readonly mode: RaceMode;
@@ -29,24 +37,32 @@ export class RaceManager {
   playerLapStart = 0;
   playerBestLap = Infinity;
   playerLastLap = 0;
+  /** Completed sector times in the player's current lap. */
+  currentSectors: number[] = [];
+  /** Every lap time the player has set this session (for time trial history). */
+  readonly sessionLaps: number[] = [];
 
   private track: Track;
   private vehicles: Vehicle[];
   private events: RaceEvents;
-  private finishCounter = 0;
+  /** Track distances of the S1→S2 and S2→S3 boundaries. */
+  private boundaries: [number, number];
+  private sectorStart = 0;
 
   constructor(track: Track, vehicles: Vehicle[], mode: RaceMode, laps: number, events: RaceEvents) {
     this.track = track;
     this.vehicles = vehicles;
     this.mode = mode;
-    this.lapsTotal = mode === 'sprint' ? 1 : laps;
+    this.lapsTotal = mode === 'sprint' ? 1 : mode === 'timetrial' ? Number.POSITIVE_INFINITY : laps;
     this.events = events;
+    this.boundaries = [track.length / 3, (track.length * 2) / 3];
   }
 
   start(): void {
     this.started = true;
     this.raceTime = 0;
     this.playerLapStart = 0;
+    this.sectorStart = 0;
   }
 
   update(dt: number): void {
@@ -67,25 +83,50 @@ export class RaceManager {
         v.lap++;
         if (v.isPlayer) {
           if (completedFullLap) {
+            // The start line closes sector 3.
+            const s3 = this.raceTime - this.sectorStart;
+            this.currentSectors.push(s3);
+            this.events.onPlayerSector(this.currentSectors.length - 1, s3);
+
             const lapTime = this.raceTime - this.playerLapStart;
-            this.playerLapStart = this.raceTime;
             this.playerLastLap = lapTime;
-            const isBest = lapTime < this.playerBestLap;
-            if (isBest) this.playerBestLap = lapTime;
-            if (v.lap < this.lapsTotal) this.events.onPlayerLap(v.lap + 1, lapTime, isBest);
-          } else {
-            this.playerLapStart = this.raceTime;
+            this.sessionLaps.push(lapTime);
+            const isSessionBest = lapTime < this.playerBestLap;
+            if (isSessionBest) this.playerBestLap = lapTime;
+            if (v.lap < this.lapsTotal) {
+              this.events.onPlayerLap(v.lap + 1, lapTime, [...this.currentSectors], isSessionBest);
+            }
           }
+          this.playerLapStart = this.raceTime;
+          this.sectorStart = this.raceTime;
+          this.currentSectors = [];
         }
         if (v.lap >= this.lapsTotal) {
           v.finished = true;
           v.finishTime = this.raceTime;
-          this.finishCounter++;
           if (v.isPlayer) this.events.onPlayerFinish();
         }
       }
 
+      if (v.isPlayer && !v.finished) this.checkSectorCrossings(v);
+
       v.totalProgress = v.lap * L + v.trackDist;
+    }
+  }
+
+  /** Detect forward crossings of the two mid-lap sector boundaries. */
+  private checkSectorCrossings(v: Vehicle): void {
+    const L = this.track.length;
+    for (let k = 0; k < 2; k++) {
+      const b = this.boundaries[k];
+      const crossed = v.prevDist < b && v.trackDist >= b && v.trackDist - v.prevDist < L / 2;
+      // Sectors only count in order, on a lap that started at the line.
+      if (crossed && this.currentSectors.length === k && v.lap >= 0) {
+        const t = this.raceTime - this.sectorStart;
+        this.currentSectors.push(t);
+        this.sectorStart = this.raceTime;
+        this.events.onPlayerSector(k, t);
+      }
     }
   }
 

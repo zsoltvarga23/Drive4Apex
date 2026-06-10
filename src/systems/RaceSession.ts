@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import type { Quality, RaceConfig } from '../types';
+import type { Quality, RaceConfig, SaveData } from '../types';
 import { CARS, getCar } from '../config/cars';
+import { persistSave } from '../utils/storage';
 import { AI_COLOR_POOL } from '../config/colors';
 import { getTrack } from '../config/tracks';
 import { generateRacerNames } from '../config/names';
@@ -35,20 +36,26 @@ export class RaceSession {
 
   /** While true (countdown), cars don't move but engines rev. */
   frozen = true;
+  /** True when the player set a new all-time lap record this session. */
+  newLapRecord = false;
+  /** True when the whole grid is formula cars (player picked the AX-1). */
+  isFormulaEvent = false;
 
   private ai: AIController[] = [];
   private particles: Particles;
   private minimap: Minimap | null = null;
   private hudParent: HTMLElement;
   private audio: AudioManager;
+  private save: SaveData;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private wrongWayTime = 0;
   private particleAccum = 0;
 
-  constructor(config: RaceConfig, quality: Quality, hudParent: HTMLElement, audio: AudioManager) {
+  constructor(config: RaceConfig, quality: Quality, hudParent: HTMLElement, audio: AudioManager, save: SaveData) {
     this.config = config;
     this.audio = audio;
+    this.save = save;
     this.hudParent = hudParent;
     this.hud = new HUD(hudParent);
     this.hud.hide();
@@ -78,6 +85,7 @@ export class RaceSession {
       { label: 'Laying asphalt…', run: () => this.track.buildRoad() },
       { label: 'Bolting barriers…', run: () => this.track.buildBarriers() },
       { label: 'Planting scenery…', run: () => this.track.buildScenery() },
+      { label: 'Raising landmarks…', run: () => this.track.buildLandmarks() },
       { label: 'Painting horizon…', run: () => this.track.buildEnvironment() },
       { label: 'Fueling the grid…', run: () => this.spawnField() },
       { label: 'Final checks…', run: () => this.finishSetup() },
@@ -89,10 +97,29 @@ export class RaceSession {
     const cfg = this.config;
 
     // Player starts at the back of the grid — earn that podium.
-    this.player = new Vehicle(getCar(cfg.carId), cfg.colorHex, true, 'You');
-    const names = generateRacerNames(AI_COUNT);
+    const playerSpec = getCar(cfg.carId);
+    this.player = new Vehicle(playerSpec, cfg.colorHex, true, 'You');
+
+    // Time trial: an empty track, just the player versus the clock.
+    const aiCount = cfg.mode === 'timetrial' ? 0 : AI_COUNT;
+    // Formula races run a formula-only grid — a proper open-wheel series.
+    this.isFormulaEvent = playerSpec.body === 'formula' && aiCount > 0;
+
+    const names = generateRacerNames(Math.max(1, aiCount)).slice(0, aiCount);
+    const formula = CARS.find((c) => c.body === 'formula');
     const aiVehicles: Vehicle[] = names.map((name, i) => {
-      const spec = CARS[(i + 1) % CARS.length];
+      let spec: typeof playerSpec;
+      if (this.isFormulaEvent && formula) {
+        // No road cars in a formula event; liveries vary per driver.
+        spec = formula;
+      } else {
+        // AI normally drive the free roster; on Medium/Hard the pole-sitter
+        // occasionally shows up in a formula car to set the pace.
+        const aiPool = CARS.filter((c) => !c.price);
+        spec = aiPool[(i + 1) % aiPool.length];
+        const formulaChance = { easy: 0, medium: 0.25, hard: 0.5 }[cfg.difficulty];
+        if (i === 0 && formula && Math.random() < formulaChance) spec = formula;
+      }
       const color = AI_COLOR_POOL[i % AI_COLOR_POOL.length];
       return new Vehicle(spec, color, false, name);
     });
@@ -112,10 +139,57 @@ export class RaceSession {
   }
 
   private finishSetup(): void {
+    const save = this.save;
+    const trackId = this.config.trackId;
+
     const events: RaceEvents = {
-      onPlayerLap: (lapNum, _lapTime, isBest) => {
-        this.hud.showMessage(isBest ? 'BEST LAP!' : `LAP ${lapNum}`);
+      onPlayerSector: (k, t) => {
+        // Color the chip against the all-time personal-best sector.
+        const pbs = save.sectorPBs[trackId] ?? [];
+        const pb = pbs[k];
+        let status: 'pb' | 'even' | 'slow' | 'none' = 'none';
+        if (pb !== undefined) status = t < pb - 0.05 ? 'pb' : t <= pb + 0.15 ? 'even' : 'slow';
+        this.hud.setSector(k, t, status);
+        if (status === 'pb') this.hud.showMessage(`PB SECTOR ${k + 1}!`, 1100);
+
+        // Record individual sector PBs (the "ideal lap").
+        if (pb === undefined || t < pb) {
+          const arr = save.sectorPBs[trackId] ?? (save.sectorPBs[trackId] = []);
+          arr[k] = t;
+          persistSave(save);
+        }
+
+        // Live delta vs. the sector breakdown of the personal-best lap.
+        const ref = save.bestLapSectors[trackId];
+        if (ref && ref.length === 3) {
+          const cum = this.raceManager.currentSectors.reduce((a, b) => a + b, 0);
+          const refCum = ref.slice(0, k + 1).reduce((a, b) => a + b, 0);
+          this.hud.showDelta(cum - refCum);
+        }
       },
+
+      onPlayerLap: (lapNum, lapTime, sectors, isSessionBest) => {
+        // Persistent lap records (laps exist in circuit and time trial).
+        const prev = save.bestLaps[trackId];
+        if (this.config.mode !== 'sprint' && (!prev || lapTime < prev)) {
+          save.bestLaps[trackId] = lapTime;
+          if (sectors.length === 3) save.bestLapSectors[trackId] = sectors;
+          this.newLapRecord = true;
+          persistSave(save);
+          this.hud.showMessage('NEW BEST LAP!', 2200);
+        } else {
+          this.hud.showMessage(isSessionBest ? 'BEST LAP!' : `LAP ${lapNum}`);
+          // Legacy best laps predate sector tracking; seed the delta
+          // reference from the best lap we *have* timed sector-by-sector.
+          if (isSessionBest && sectors.length === 3 && !save.bestLapSectors[trackId]) {
+            save.bestLapSectors[trackId] = sectors;
+            persistSave(save);
+          }
+        }
+        this.hud.setLapHistory(this.raceManager.sessionLaps);
+        this.hud.resetSectorsSoon();
+      },
+
       onPlayerFinish: () => {
         /* handled by Game via polling player.finished */
       },
@@ -123,6 +197,7 @@ export class RaceSession {
     this.raceManager = new RaceManager(
       this.track, this.vehicles, this.config.mode, this.config.laps, events,
     );
+    this.hud.configureMode(this.config.mode);
     this.minimap = new Minimap(this.hudParent, this.track);
     this.snapCamera();
   }
@@ -191,7 +266,7 @@ export class RaceSession {
   private updateHud(dt: number): void {
     const rm = this.raceManager;
     const p = this.player;
-    this.hud.setPosition(rm.positionOf(p), this.vehicles.length);
+    if (rm.mode !== 'timetrial') this.hud.setPosition(rm.positionOf(p), this.vehicles.length);
     this.hud.setLap(rm.mode, Math.max(0, p.lap), rm.lapsTotal, p.trackDist / this.track.length);
     this.hud.setSpeed(p.speed);
     this.hud.setTimes(rm.raceTime, rm.playerBestLap);

@@ -1,5 +1,5 @@
 import type { Difficulty, RaceConfig, RaceMode, SaveData, TrackId } from '../types';
-import { CARS, getCar, statBars } from '../config/cars';
+import { CARS, getCar, isCarUnlocked, statBars } from '../config/cars';
 import { COLORS, getColor } from '../config/colors';
 import { TRACKS, getTrack } from '../config/tracks';
 import type { Standing } from '../systems/RaceManager';
@@ -31,7 +31,7 @@ export class Menus {
   private overlay: HTMLElement;
 
   // Race setup selections (car/color persist via save; the rest is per-session).
-  private trackId: TrackId = 'coastal';
+  private trackId: TrackId = 'gp';
   private mode: RaceMode = 'circuit';
   private laps = 3;
   private difficulty: Difficulty = 'medium';
@@ -105,31 +105,57 @@ export class Menus {
     const save = this.game.save;
     el.innerHTML = `
       <h2 class="heading">CHOOSE YOUR CAR</h2>
+      <p class="hint">Credits: <b id="garage-credits">${save.credits}</b></p>
       <div class="card-row" id="car-cards"></div>
       <div class="nav-row"></div>`;
     const cards = el.querySelector('#car-cards')!;
 
-    for (const car of CARS) {
-      const bars = statBars(car);
-      const card = document.createElement('div');
-      card.className = 'card car-card' + (car.id === save.carId ? ' selected' : '');
-      const bar = (label: string, v: number) => `
-        <div class="stat"><span>${label}</span>
-          <div class="stat-bar"><div style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></div></div>
-        </div>`;
-      card.innerHTML = `
-        <div class="card-name">${car.name}</div>
-        ${bar('SPEED', bars.speed)}${bar('ACCEL', bars.accel)}${bar('GRIP', bars.handling)}`;
-      card.addEventListener('click', () => {
-        this.game.uiClick();
-        save.carId = car.id;
-        this.game.persist();
-        this.game.previewCar(car.id, getColor(save.colorId).hex);
-        cards.querySelectorAll('.card').forEach((c) => c.classList.remove('selected'));
-        card.classList.add('selected');
-      });
-      cards.appendChild(card);
-    }
+    const render = () => {
+      cards.innerHTML = '';
+      for (const car of CARS) {
+        const unlocked = isCarUnlocked(car, save.unlockedCars);
+        const bars = statBars(car);
+        const card = document.createElement('div');
+        card.className =
+          'card car-card' +
+          (car.id === save.carId ? ' selected' : '') +
+          (car.price ? ' premium' : '') +
+          (unlocked ? '' : ' locked');
+        const bar = (label: string, v: number) => `
+          <div class="stat"><span>${label}</span>
+            <div class="stat-bar"><div style="width:${Math.round(Math.max(0.06, Math.min(1, v)) * 100)}%"></div></div>
+          </div>`;
+        card.innerHTML = `
+          <div class="card-name">${car.name}${car.price ? '<em class="premium-tag">PREMIUM</em>' : ''}</div>
+          ${bar('SPEED', bars.speed)}${bar('ACCEL', bars.accel)}${bar('GRIP', bars.handling)}
+          ${unlocked ? '' : `<div class="price-tag">🔒 ${car.price} cr</div>`}`;
+        card.addEventListener('click', () => {
+          // Always preview in the showroom — even locked cars can be admired.
+          this.game.previewCar(car.id, getColor(save.colorId).hex);
+          if (unlocked) {
+            this.game.uiClick();
+            save.carId = car.id;
+            this.game.persist();
+            render();
+          } else if (save.credits >= (car.price ?? 0)) {
+            this.game.uiClick();
+            save.credits -= car.price ?? 0;
+            save.unlockedCars.push(car.id);
+            save.carId = car.id;
+            this.game.persist();
+            el.querySelector('#garage-credits')!.textContent = String(save.credits);
+            this.showUnlockBanner(`New Vehicle Unlocked: ${car.name}`);
+            render();
+          } else {
+            card.classList.remove('shake');
+            void card.offsetWidth;
+            card.classList.add('shake');
+          }
+        });
+        cards.appendChild(card);
+      }
+    };
+    render();
 
     const nav = el.querySelector('.nav-row')!;
     nav.appendChild(this.button('← BACK', 'btn', () => this.show('main')));
@@ -198,16 +224,24 @@ export class Menus {
     for (const track of TRACKS) {
       const card = document.createElement('div');
       card.className = 'card track-card' + (track.id === this.trackId ? ' selected' : '');
-      const best = this.game.save.bestLaps[track.id];
+      // Canyon is a sprint run, so its headline record is the route time.
+      const bestLap = this.game.save.bestLaps[track.id];
+      const bestSprint = this.game.save.bestSprints[track.id];
+      const record =
+        track.id === 'canyon'
+          ? bestSprint ? `Best run ${formatTime(bestSprint)}` : 'No record yet'
+          : bestLap ? `Best lap ${formatTime(bestLap)}` : 'No record yet';
       card.innerHTML = `
         <canvas class="track-preview" width="180" height="110"></canvas>
         <div class="card-name">${track.name}</div>
         <div class="card-sub">${track.difficultyLabel} · ${track.description}</div>
-        <div class="card-sub best">${best ? `Best lap ${formatTime(best)}` : 'No record yet'}</div>`;
+        <div class="card-sub best">${record}</div>`;
       drawTrackPreview(card.querySelector('canvas')!, track.points, track.theme.barrier);
       card.addEventListener('click', () => {
         this.game.uiClick();
         this.trackId = track.id;
+        // Sierra Canyon is designed as a point-to-point run — suggest Sprint.
+        this.mode = track.id === 'canyon' ? 'sprint' : 'circuit';
         cards.querySelectorAll('.card').forEach((c) => c.classList.remove('selected'));
         card.classList.add('selected');
       });
@@ -226,7 +260,8 @@ export class Menus {
       <p class="hint">${track.name}</p>
       <div class="setup-group"><label>MODE</label><div class="seg" id="seg-mode"></div></div>
       <div class="setup-group" id="laps-group"><label>LAPS</label><div class="seg" id="seg-laps"></div></div>
-      <div class="setup-group"><label>DIFFICULTY</label><div class="seg" id="seg-diff"></div></div>
+      <div class="setup-group" id="diff-group"><label>DIFFICULTY</label><div class="seg" id="seg-diff"></div></div>
+      <p class="hint" id="tt-hint" style="display:none">Solo against the clock — sector splits, live deltas, instant restart with R.</p>
       <div class="nav-row"></div>`;
 
     const seg = <T extends string | number>(
@@ -248,12 +283,18 @@ export class Menus {
     };
 
     const lapsGroup = el.querySelector<HTMLElement>('#laps-group')!;
+    const diffGroup = el.querySelector<HTMLElement>('#diff-group')!;
+    const ttHint = el.querySelector<HTMLElement>('#tt-hint')!;
     const syncLapsVisibility = () => {
       lapsGroup.style.display = this.mode === 'circuit' ? '' : 'none';
+      // No opponents in time trial, so difficulty is meaningless there.
+      diffGroup.style.display = this.mode === 'timetrial' ? 'none' : '';
+      ttHint.style.display = this.mode === 'timetrial' ? '' : 'none';
     };
     seg(el.querySelector('#seg-mode')!, [
       { value: 'circuit' as RaceMode, label: 'CIRCUIT' },
       { value: 'sprint' as RaceMode, label: 'SPRINT' },
+      { value: 'timetrial' as RaceMode, label: 'TIME TRIAL' },
     ], this.mode, (v) => { this.mode = v; syncLapsVisibility(); });
     seg(el.querySelector('#seg-laps')!, [3, 4, 5].map((n) => ({ value: n, label: String(n) })),
       this.laps, (v) => { this.laps = v; });
@@ -271,7 +312,7 @@ export class Menus {
       this.game.startRace({
         trackId: this.trackId,
         mode: this.mode,
-        laps: this.mode === 'sprint' ? 1 : this.laps,
+        laps: this.mode === 'circuit' ? this.laps : 1,
         carId: save.carId,
         colorHex: getColor(save.colorId).hex,
         difficulty: this.difficulty,
@@ -391,6 +432,15 @@ export class Menus {
 
   hidePause(): void {
     this.overlay.querySelector('#pause-screen')?.remove();
+  }
+
+  /** Celebration toast shown when a premium vehicle is purchased. */
+  showUnlockBanner(text: string): void {
+    const el = document.createElement('div');
+    el.className = 'unlock-banner';
+    el.textContent = `🏆 ${text}`;
+    this.overlay.appendChild(el);
+    setTimeout(() => el.remove(), 3200);
   }
 
   /** Brief full-screen flash + confetti when the player crosses the line. */

@@ -17,7 +17,7 @@ import { Vehicle } from '../vehicles/Vehicle';
  */
 export function runSteeringValidation(): void {
   // Track constructor only computes spline samples — no meshes are built.
-  const track = new Track(getTrack('coastal'), 0);
+  const track = new Track(getTrack('gp'), 0);
   const car = new Vehicle(getCar('comet'), '#ffffff', false, 'STEERING-TEST');
   car.spawn(track, 30, 0);
 

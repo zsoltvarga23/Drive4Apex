@@ -5,16 +5,31 @@ export interface TrackTheme {
   sky: string;
   fog: string;
   ground: string;
-  /** Color of the distant backdrop shapes (mesas / peaks / islands). */
+  /** Color of the distant backdrop shapes (mesas / peaks / hills). */
   backdrop: string;
   /** Barrier stripe accent color. */
   barrier: string;
   hemiSky: string;
   hemiGround: string;
   sunIntensity: number;
-  props: 'palms' | 'cacti' | 'pines';
+  props: 'palms' | 'cacti' | 'pines' | 'parkland' | 'boulders';
   /** Draw an ocean plane around the island. */
   ocean: boolean;
+}
+
+/**
+ * Signature landmarks placed along the lap. Ranges/positions are fractions
+ * of total track length (0..1) so they survive layout tweaks.
+ */
+export interface TrackFeatures {
+  /** Red/white rumble strips on corner edges. */
+  curbs?: boolean;
+  /** Enclosed tunnel sections: [startFraction, endFraction]. */
+  tunnels?: [number, number][];
+  /** Bridge sections (railings + support pylons, no embankment). */
+  bridges?: [number, number][];
+  /** Grandstand positions. */
+  grandstands?: number[];
 }
 
 export interface TrackDef {
@@ -29,62 +44,118 @@ export interface TrackDef {
   /** True if the road leaves ground level (adds embankment skirts). */
   elevated: boolean;
   theme: TrackTheme;
+  features?: TrackFeatures;
 }
 
+/**
+ * Three original circuits, each built around a real-motorsport archetype
+ * (inspired by, never copying, the real venues):
+ *
+ * - Apex International: modern Grand Prix venue — Silverstone's fast
+ *   sweepers, Suzuka's esses, Bahrain's stadium hairpin and a COTA-style
+ *   heavy-braking chicane. Wide FIA-style runoff, grandstands, curbs.
+ * - Greenwood Endurance: classic European endurance park (Spa/Le Mans/
+ *   Monza DNA) — long forest straights, a flat-out uphill left-right sweep
+ *   over a blind crest, and flowing technical combinations in the trees.
+ *   (Theme hooks are in place for a future day-to-night variant.)
+ * - Sierra Canyon: a point-to-point style sprint run through high desert —
+ *   tunnel through the ridge, bridge across the gorge, overlook sweepers.
+ */
 export const TRACKS: TrackDef[] = [
   {
-    id: 'coastal',
-    name: 'Coastal Circuit',
-    description: 'Flowing ocean-side curves with palm-lined straights.',
-    difficultyLabel: 'Medium',
-    halfWidth: 7,
-    elevated: false,
-    points: [
-      [0, 0, -170], [120, 0, -160], [205, 0, -95], [215, 0, 0],
-      [165, 0, 75], [185, 0, 150], [105, 0, 205], [0, 0, 185],
-      [-85, 0, 215], [-175, 0, 165], [-205, 0, 60], [-150, 0, -25],
-      [-185, 0, -105], [-100, 0, -165],
-    ],
-    theme: {
-      sky: '#8ed4f5', fog: '#bfe6f7', ground: '#dcc592', backdrop: '#5fae8e',
-      barrier: '#e74c3c', hemiSky: '#bfe3ff', hemiGround: '#d8c79a',
-      sunIntensity: 2.6, props: 'palms', ocean: true,
-    },
-  },
-  {
-    id: 'desert',
-    name: 'Desert Speedway',
-    description: 'Wide open straights and sweeping high-speed bends.',
+    id: 'gp',
+    name: 'Apex International Circuit',
+    description: 'GP venue: stadium hairpin, flowing esses and a heavy-braking chicane.',
     difficultyLabel: 'Easy',
-    halfWidth: 9,
+    halfWidth: 8,
     elevated: false,
     points: [
-      [-240, 0, -210], [40, 0, -225], [180, 0, -215], [255, 0, -120],
-      [262, 0, 40], [185, 0, 130], [55, 0, 120], [-50, 0, 175],
-      [-180, 0, 190], [-262, 0, 95], [-258, 0, -70],
+      // Main straight (slight kink) into the heavy-braking stadium hairpin
+      [0, 0, -260], [150, 0, -262], [240, 0, -240], [295, 0, -165],
+      [250, 0, -95], [185, 0, -125], [150, 0, -60],
+      // The esses — rhythm section, Suzuka-style
+      [185, 0, 0], [150, 0, 55], [190, 0, 110],
+      // Fast, open sweepers (carry speed, Silverstone-style)
+      [140, 0, 175], [40, 0, 205], [-70, 0, 215], [-180, 0, 205],
+      // Back straight into the bus-stop chicane
+      [-255, 0, 150], [-272, 0, 75], [-235, 0, 45], [-268, 0, -10],
+      // Final sector back onto the pit straight
+      [-240, 0, -110], [-160, 0, -215], [-70, 0, -255],
     ],
     theme: {
-      sky: '#f7c873', fog: '#f3d9a8', ground: '#d8a455', backdrop: '#b06a3b',
-      barrier: '#e67e22', hemiSky: '#ffe3b0', hemiGround: '#c89a5a',
-      sunIntensity: 3.0, props: 'cacti', ocean: false,
+      sky: '#9fd0f0', fog: '#cfe3f2', ground: '#cfc5a8', backdrop: '#8b9bb0',
+      barrier: '#e10600', hemiSky: '#d4e8fa', hemiGround: '#c2b896',
+      sunIntensity: 2.8, props: 'parkland', ocean: false,
+    },
+    features: {
+      curbs: true,
+      grandstands: [0.015, 0.16, 0.56],
     },
   },
   {
-    id: 'mountain',
-    name: 'Mountain Pass',
-    description: 'Tight technical switchbacks with serious elevation.',
+    id: 'endurance',
+    name: 'Greenwood Endurance Raceway',
+    description: 'Forest straights, a flat-out uphill sweep and a blind crest.',
     difficultyLabel: 'Hard',
-    halfWidth: 6,
+    halfWidth: 7,
     elevated: true,
     points: [
-      [0, 0, -150], [95, 1, -140], [150, 4, -75], [115, 7, 0],
-      [160, 9, 75], [85, 12, 130], [0, 14, 95], [-75, 12, 140],
-      [-150, 9, 85], [-115, 6, 10], [-160, 3, -65], [-85, 1, -120],
+      // Downhill start straight into a fast right
+      [0, 2, -200], [110, 0, -212], [185, 1, -160],
+      // The uphill left-right sweep over a blind crest (Eau Rouge DNA)
+      [205, 5, -75], [165, 9, -25], [205, 14, 40],
+      // Climbing straight to the highest point
+      [195, 17, 115], [130, 18, 165],
+      // Chicane flick at the crest
+      [40, 16, 145], [-15, 15, 180],
+      // Long forest arc descending
+      [-110, 14, 195], [-195, 11, 145],
+      // Technical downhill left-left combination
+      [-175, 7, 60], [-225, 5, -25],
+      // Back through the woods to the line
+      [-180, 3, -110], [-90, 2, -175],
     ],
     theme: {
-      sky: '#a8c6dd', fog: '#c3d5e2', ground: '#5d7a4e', backdrop: '#7d8da0',
-      barrier: '#95a5a6', hemiSky: '#cfe0ee', hemiGround: '#6b7d5c',
+      sky: '#a9c8e8', fog: '#c2d6e4', ground: '#4e6e3f', backdrop: '#5e7290',
+      barrier: '#2962ff', hemiSky: '#cfe0ee', hemiGround: '#54683f',
       sunIntensity: 2.2, props: 'pines', ocean: false,
+    },
+    features: {
+      curbs: true,
+      grandstands: [0.01],
+    },
+  },
+  {
+    id: 'canyon',
+    name: 'Sierra Canyon Run',
+    description: 'High-desert sprint: through the ridge tunnel, over the gorge bridge.',
+    difficultyLabel: 'Medium',
+    halfWidth: 6.5,
+    elevated: true,
+    points: [
+      // Highway section — flat-out start
+      [0, 4, -240], [140, 4, -252], [250, 6, -195],
+      // Climbing sweepers into the ridge
+      [295, 9, -90], [265, 13, 10],
+      // Tunnel through the mountain
+      [205, 17, 75], [150, 19, 130],
+      // Scenic overlook at the summit
+      [60, 20, 175], [-40, 18, 195],
+      // Descent toward the gorge
+      [-150, 14, 205], [-235, 11, 140],
+      // The bridge across the gorge
+      [-270, 10, 40], [-250, 9, -60],
+      // Canyon floor run back to the line
+      [-190, 7, -140], [-100, 5, -205],
+    ],
+    theme: {
+      sky: '#ffd9a0', fog: '#ecc795', ground: '#c1713f', backdrop: '#a05a32',
+      barrier: '#ff8f00', hemiSky: '#ffe6bb', hemiGround: '#b06a3e',
+      sunIntensity: 2.9, props: 'boulders', ocean: false,
+    },
+    features: {
+      tunnels: [[0.33, 0.43]],
+      bridges: [[0.64, 0.78]],
     },
   },
 ];

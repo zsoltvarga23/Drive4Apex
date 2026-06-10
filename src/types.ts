@@ -1,9 +1,9 @@
 /** Shared type definitions used across the game. */
 
-export type TrackId = 'coastal' | 'desert' | 'mountain';
-export type RaceMode = 'circuit' | 'sprint';
+export type TrackId = 'gp' | 'endurance' | 'canyon';
+export type RaceMode = 'circuit' | 'sprint' | 'timetrial';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type CarBody = 'sport' | 'super' | 'muscle' | 'compact' | 'classic';
+export type CarBody = 'sport' | 'super' | 'muscle' | 'compact' | 'classic' | 'formula';
 
 /** Static performance/appearance data for a selectable car. */
 export interface CarSpec {
@@ -18,6 +18,8 @@ export interface CarSpec {
   /** Braking deceleration in m/s². */
   braking: number;
   body: CarBody;
+  /** Credit cost to unlock; omitted/0 = available from the start. */
+  price?: number;
 }
 
 /** Everything needed to start a race. */
@@ -54,11 +56,19 @@ export interface Settings {
 export interface SaveData {
   credits: number;
   unlockedColors: string[];
+  /** Ids of purchased premium cars (free cars are always available). */
+  unlockedCars: string[];
   carId: string;
   colorId: string;
   settings: Settings;
-  /** Best circuit lap time per track id, in seconds. */
+  /** Best lap time per track id (circuit & time trial), in seconds. */
   bestLaps: Partial<Record<TrackId, number>>;
+  /** Sector breakdown of the best lap — reference for live lap deltas. */
+  bestLapSectors: Partial<Record<TrackId, number[]>>;
+  /** Individual personal-best sector times (the "ideal lap"). */
+  sectorPBs: Partial<Record<TrackId, number[]>>;
+  /** Fastest sprint (point-to-point) total time per track. */
+  bestSprints: Partial<Record<TrackId, number>>;
   racesPlayed: number;
   racesWon: number;
 }

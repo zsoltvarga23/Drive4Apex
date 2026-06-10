@@ -208,6 +208,9 @@ export class Track {
   /** Vertical wall from the road edge down to the ground (mountain embankments). */
   private buildSkirt(offset: number): THREE.Mesh {
     const n = SAMPLE_COUNT;
+    // Bridge spans get open air + pylons instead of a solid embankment.
+    const bridges = this.def.features?.bridges ?? [];
+    const onBridge = (i: number) => bridges.some(([a, b]) => i / n >= a && i / n <= b);
     const positions = new Float32Array((n + 1) * 2 * 3);
     const indices: number[] = [];
     for (let i = 0; i <= n; i++) {
@@ -215,7 +218,7 @@ export class Track {
       const x = s.pos.x + s.left.x * offset;
       const z = s.pos.z + s.left.z * offset;
       positions.set([x, s.pos.y + 0.02, z, x, -0.4, z], i * 6);
-      if (i < n) {
+      if (i < n && !onBridge(i)) {
         const a = i * 2;
         indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
         indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); // both windings (visible from either side)
@@ -324,7 +327,11 @@ export class Track {
       out.push(m.clone());
     };
 
-    for (let i = 0; i < treeCount; i++) place(trunkMatrices, 5, 45, 0.8, 0.7);
+    // Canyon spires hug the road to form a corridor; other props spread wide.
+    const near = theme.props === 'boulders';
+    for (let i = 0; i < treeCount; i++) {
+      place(trunkMatrices, near ? 3 : 5, near ? 30 : 45, near ? 1.1 : 0.8, near ? 1.3 : 0.7);
+    }
     topMatrices.push(...trunkMatrices); // tops share transforms with trunks
     for (let i = 0; i < rockCount; i++) place(rockMatrices, 4, 60, 0.5, 1.2);
 
@@ -347,6 +354,22 @@ export class Track {
       topGeo.translate(0, 3.3, 0);
       trunkColor = 0x3f8f3f;
       topColor = 0x4fa84f;
+    } else if (theme.props === 'parkland') {
+      // Round broadleaf trees for the GP venue infield.
+      trunkGeo = new THREE.CylinderGeometry(0.22, 0.32, 2.4, 6);
+      trunkGeo.translate(0, 1.2, 0);
+      topGeo = new THREE.SphereGeometry(1.7, 8, 6);
+      topGeo.translate(0, 3.3, 0);
+      trunkColor = 0x7a5a3a;
+      topColor = 0x4d8f43;
+    } else if (theme.props === 'boulders') {
+      // Sandstone spires + boulders forming a canyon corridor.
+      trunkGeo = new THREE.ConeGeometry(2.8, 9, 5);
+      trunkGeo.translate(0, 4.5, 0);
+      topGeo = new THREE.DodecahedronGeometry(1.7, 0);
+      topGeo.translate(0, 1, 0);
+      trunkColor = 0xa3592f;
+      topColor = 0xb56a3c;
     } else {
       trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 2, 6);
       trunkGeo.translate(0, 1, 0);
@@ -408,6 +431,223 @@ export class Track {
     matrices.forEach((mat, i) => peaks.setMatrixAt(i, mat));
     peaks.instanceMatrix.needsUpdate = true;
     this.group.add(peaks);
+  }
+
+  /** Stage 5: signature landmarks — curbs, tunnels, bridges, grandstands. */
+  buildLandmarks(): void {
+    const f = this.def.features;
+    if (!f) return;
+    if (f.curbs) this.buildCurbs();
+    for (const [a, b] of f.tunnels ?? []) this.buildTunnel(a, b);
+    for (const [a, b] of f.bridges ?? []) this.buildBridge(a, b);
+    for (const at of f.grandstands ?? []) this.buildGrandstand(at);
+  }
+
+  /** Convert a [fraction, fraction] lap range to sample indices. */
+  private fracRange(a: number, b: number): [number, number] {
+    return [Math.floor(a * SAMPLE_COUNT), Math.ceil(b * SAMPLE_COUNT)];
+  }
+
+  /**
+   * Generic quad strip between two rails over a sample index range.
+   * railA/railB map a sample to a world-space [x, y, z].
+   */
+  private rangeStrip(
+    i0: number,
+    i1: number,
+    railA: (s: TrackSample) => [number, number, number],
+    railB: (s: TrackSample) => [number, number, number],
+    material: THREE.Material,
+    doubleSided = false,
+  ): THREE.Mesh {
+    const count = i1 - i0 + 1;
+    const positions = new Float32Array(count * 2 * 3);
+    const uvs = new Float32Array(count * 2 * 2);
+    const indices: number[] = [];
+    for (let k = 0; k < count; k++) {
+      const s = this.samples[mod(i0 + k, SAMPLE_COUNT)];
+      const a = railA(s);
+      const b = railB(s);
+      positions.set([a[0], a[1], a[2], b[0], b[1], b[2]], k * 6);
+      const v = s.dist / 4;
+      uvs.set([0, v, 1, v], k * 4);
+      if (k < count - 1) {
+        const q = k * 2;
+        indices.push(q, q + 1, q + 2, q + 1, q + 3, q + 2);
+        if (doubleSided) indices.push(q, q + 2, q + 1, q + 1, q + 2, q + 3);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, material);
+  }
+
+  /** Red/white rumble strips along every corner edge (GP signature). */
+  private buildCurbs(): void {
+    const hw = this.halfWidth;
+    const mat = new THREE.MeshLambertMaterial({ map: makeCurbTexture() });
+    const minCurv = 0.008;
+
+    // Find runs of consecutive corner samples, pad slightly, build strips.
+    const spans: [number, number][] = [];
+    let runStart = -1;
+    for (let i = 0; i <= SAMPLE_COUNT; i++) {
+      const corner = i < SAMPLE_COUNT && Math.abs(this.samples[i].curvature) > minCurv;
+      if (corner && runStart < 0) runStart = i;
+      if (!corner && runStart >= 0) {
+        if (i - runStart > 4) {
+          spans.push([Math.max(0, runStart - 3), Math.min(SAMPLE_COUNT - 1, i + 2)]);
+        }
+        runStart = -1;
+      }
+    }
+
+    for (const [a, b] of spans) {
+      for (const side of [1, -1]) {
+        this.group.add(
+          this.rangeStrip(
+            a, b,
+            (s) => [s.pos.x + s.left.x * hw * side, s.pos.y + 0.08, s.pos.z + s.left.z * hw * side],
+            (s) => [s.pos.x + s.left.x * (hw + 1.3) * side, s.pos.y + 0.03, s.pos.z + s.left.z * (hw + 1.3) * side],
+            mat,
+          ),
+        );
+      }
+    }
+  }
+
+  /** Enclosed tunnel: side walls, roof, ceiling lights and portal frames. */
+  private buildTunnel(fa: number, fb: number): void {
+    const [i0, i1] = this.fracRange(fa, fb);
+    const wallOff = this.halfWidth + 2.0;
+    const height = 5.5;
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0x4a4642 });
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0x38352f });
+
+    for (const side of [1, -1]) {
+      this.group.add(
+        this.rangeStrip(
+          i0, i1,
+          (s) => [s.pos.x + s.left.x * wallOff * side, s.pos.y, s.pos.z + s.left.z * wallOff * side],
+          (s) => [s.pos.x + s.left.x * wallOff * side, s.pos.y + height, s.pos.z + s.left.z * wallOff * side],
+          wallMat, true,
+        ),
+      );
+    }
+    this.group.add(
+      this.rangeStrip(
+        i0, i1,
+        (s) => [s.pos.x + s.left.x * wallOff, s.pos.y + height, s.pos.z + s.left.z * wallOff],
+        (s) => [s.pos.x - s.left.x * wallOff, s.pos.y + height, s.pos.z - s.left.z * wallOff],
+        roofMat, true,
+      ),
+    );
+
+    // Warm ceiling light strips so the tunnel reads at speed.
+    const lightGeo = new THREE.BoxGeometry(1.6, 0.12, 0.5);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+    for (let i = i0 + 2; i < i1; i += 5) {
+      const s = this.samples[mod(i, SAMPLE_COUNT)];
+      const lamp = new THREE.Mesh(lightGeo, lightMat);
+      lamp.position.set(s.pos.x, s.pos.y + height - 0.25, s.pos.z);
+      lamp.rotation.y = Math.atan2(s.tangent.x, s.tangent.z);
+      this.group.add(lamp);
+    }
+
+    // Portal frames at both ends.
+    const portalMat = new THREE.MeshLambertMaterial({ color: 0x5d5046 });
+    const pillarGeo = new THREE.BoxGeometry(1.4, height + 1.6, 1.4);
+    for (const i of [i0, i1]) {
+      const s = this.samples[mod(i, SAMPLE_COUNT)];
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(wallOff * 2 + 2.6, 1.6, 1.4), portalMat);
+      lintel.position.set(s.pos.x, s.pos.y + height + 0.7, s.pos.z);
+      lintel.rotation.y = Math.atan2(s.left.x, s.left.z) + Math.PI / 2;
+      this.group.add(lintel);
+      for (const side of [1, -1]) {
+        const pillar = new THREE.Mesh(pillarGeo, portalMat);
+        pillar.position.set(
+          s.pos.x + s.left.x * (wallOff + 0.5) * side,
+          s.pos.y + (height + 1.6) / 2,
+          s.pos.z + s.left.z * (wallOff + 0.5) * side,
+        );
+        this.group.add(pillar);
+      }
+    }
+  }
+
+  /** Bridge: railings, a deck-thickness band and support pylons to the ground. */
+  private buildBridge(fa: number, fb: number): void {
+    const [i0, i1] = this.fracRange(fa, fb);
+    const hw = this.halfWidth;
+    const edge = hw + 2.0;
+    const railMat = new THREE.MeshLambertMaterial({ color: 0x9aa3ad });
+    const deckMat = new THREE.MeshLambertMaterial({ color: 0x6e6259 });
+
+    for (const side of [1, -1]) {
+      this.group.add(
+        this.rangeStrip(
+          i0, i1,
+          (s) => [s.pos.x + s.left.x * edge * side, s.pos.y + 0.02, s.pos.z + s.left.z * edge * side],
+          (s) => [s.pos.x + s.left.x * edge * side, s.pos.y + 1.3, s.pos.z + s.left.z * edge * side],
+          railMat, true,
+        ),
+      );
+      this.group.add(
+        this.rangeStrip(
+          i0, i1,
+          (s) => [s.pos.x + s.left.x * edge * side, s.pos.y, s.pos.z + s.left.z * edge * side],
+          (s) => [s.pos.x + s.left.x * edge * side, s.pos.y - 1.7, s.pos.z + s.left.z * edge * side],
+          deckMat, true,
+        ),
+      );
+    }
+
+    // Support pylons from the deck down to the gorge floor.
+    const matrices: THREE.Matrix4[] = [];
+    const m = new THREE.Matrix4();
+    for (let i = i0 + 4; i < i1 - 2; i += 9) {
+      const s = this.samples[mod(i, SAMPLE_COUNT)];
+      for (const side of [1, -1]) {
+        const x = s.pos.x + s.left.x * hw * 0.55 * side;
+        const z = s.pos.z + s.left.z * hw * 0.55 * side;
+        const h = Math.max(1.5, s.pos.y + 0.5);
+        m.makeScale(1.6, h, 1.6);
+        m.setPosition(x, h / 2 - 0.5, z);
+        matrices.push(m.clone());
+      }
+    }
+    this.group.add(makeInstanced(new THREE.BoxGeometry(1, 1, 1), 0x7d7166, matrices));
+  }
+
+  /** Covered grandstand beside the track (GP paddock atmosphere). */
+  private buildGrandstand(at: number): void {
+    const s = this.samples[mod(Math.floor(at * SAMPLE_COUNT), SAMPLE_COUNT)];
+    const off = this.halfWidth + 8;
+    const g = new THREE.Group();
+    const tier1 = new THREE.Mesh(
+      new THREE.BoxGeometry(36, 3, 7),
+      new THREE.MeshLambertMaterial({ color: 0x8c97a3 }),
+    );
+    tier1.position.set(0, 1.5, 0);
+    const tier2 = new THREE.Mesh(
+      new THREE.BoxGeometry(36, 3, 4.5),
+      new THREE.MeshLambertMaterial({ color: 0x2f3a47 }),
+    );
+    tier2.position.set(0, 4, 1.4);
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(38, 0.5, 9),
+      new THREE.MeshLambertMaterial({ color: 0x00b8cc }),
+    );
+    roof.position.set(0, 6.8, 0.6);
+    g.add(tier1, tier2, roof);
+
+    // Long side parallel to the road, on the driver's left.
+    g.position.set(s.pos.x + s.left.x * off, Math.max(0, s.pos.y - 0.5), s.pos.z + s.left.z * off);
+    g.rotation.y = Math.atan2(s.tangent.x, s.tangent.z) + Math.PI / 2;
+    this.group.add(g);
   }
 
   dispose(): void {
@@ -475,6 +715,24 @@ function makeBarrierTexture(accent: string): THREE.CanvasTexture {
   for (let x = 0; x < 128; x += 32) ctx.fillRect(x, 0, 16, 32);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Red/white striped rumble-strip texture. */
+function makeCurbTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 16;
+  c.height = 64;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(0, 0, 16, 64);
+  ctx.fillStyle = '#d32f2f';
+  ctx.fillRect(0, 0, 16, 16);
+  ctx.fillRect(0, 32, 16, 16);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }

@@ -330,6 +330,84 @@ input[type='range'] {
 .touch-brake { border-color: rgba(255, 93, 93, 0.5); }
 .touch-small { width: 56px; height: 56px; font-size: 1rem; }
 
+/* ====================== Sector timing & deltas ====================== */
+.hud-sectors {
+  position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.sector-chip {
+  background: rgba(8, 12, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text-dim);
+  min-width: 76px; text-align: center;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.sector-chip.pb { color: #2ecc71; border-color: rgba(46, 204, 113, 0.6); }
+.sector-chip.even { color: #f1c40f; border-color: rgba(241, 196, 15, 0.55); }
+.sector-chip.slow { color: var(--danger); border-color: rgba(255, 93, 93, 0.55); }
+.sector-chip.none { color: var(--text); border-color: rgba(0, 229, 255, 0.35); }
+
+.hud-delta {
+  margin-top: 2px;
+  font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.hud-delta.fast { color: #2ecc71; }
+.hud-delta.slow { color: var(--danger); }
+
+.hud-history {
+  display: none;
+  margin-top: 10px;
+  font-size: 0.78rem; font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
+}
+.hud-history .lap-row { padding: 1px 0; }
+.hud-history .lap-row.best { color: #2ecc71; font-weight: 700; }
+
+/* ===================== Premium cars & unlocks ===================== */
+.car-card.premium { border-color: rgba(255, 196, 0, 0.45); }
+.car-card.premium.selected {
+  border-color: var(--accent-warm);
+  box-shadow: 0 0 22px rgba(255, 196, 0, 0.3);
+}
+.car-card.locked { opacity: 0.8; }
+.premium-tag {
+  display: block; font-style: normal; font-size: 0.6rem; letter-spacing: 0.22em;
+  color: var(--accent-warm); margin-top: 3px;
+}
+.price-tag {
+  margin-top: 8px; font-size: 0.78rem; font-weight: 700;
+  color: var(--accent-warm); letter-spacing: 0.05em;
+}
+.card.shake { animation: shake 0.3s ease; }
+
+.unlock-banner {
+  position: absolute; top: 14%; left: 50%; transform: translateX(-50%);
+  background: rgba(16, 21, 32, 0.92);
+  border: 1px solid var(--accent-warm);
+  color: var(--accent-warm);
+  font-weight: 800; letter-spacing: 0.08em; font-size: 1.05rem;
+  padding: 14px 28px; border-radius: 12px;
+  box-shadow: 0 0 40px rgba(255, 196, 0, 0.35);
+  animation: unlock-in 0.45s cubic-bezier(0.2, 1.6, 0.4, 1), unlock-out 0.4s ease 2.7s forwards;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 60;
+}
+@keyframes unlock-in {
+  from { transform: translateX(-50%) translateY(-24px) scale(0.85); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
+@keyframes unlock-out {
+  to { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+}
+
 /* ========================= Small screens ========================= */
 @media (max-width: 640px) {
   .card { width: 150px; padding: 12px; }
@@ -338,4 +416,5 @@ input[type='range'] {
   .hud-speed-value { font-size: 2.2rem; }
   #minimap { width: 96px; height: 96px; }
   .modal-card { padding: 20px; }
+  .unlock-banner { white-space: normal; text-align: center; max-width: 86vw; }
 }

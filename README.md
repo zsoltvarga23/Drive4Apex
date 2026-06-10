@@ -9,10 +9,16 @@ every asset (models, textures, audio) is generated procedurally at runtime.
 
 ## Features
 
-- **6 selectable cars** with distinct top speed / acceleration / handling stats
+- **6 starter cars** with distinct top speed / acceleration / handling stats,
+  plus the **AX-1 Formula** — a premium open-wheel reward car (7,500 credits)
+  with the best stats in the game but razor-sharp steering and slicks that
+  hate leaving the asphalt. On Medium/Hard, the pole-position AI sometimes
+  shows up in one.
 - **10 paint colors** — 4 free, 6 unlocked with race credits
-- **3 tracks**: Coastal Circuit (ocean-side, medium), Desert Speedway
-  (long straights, fast), Mountain Pass (technical, elevation changes)
+- **3 motorsport-inspired tracks**: Apex International Circuit (GP venue —
+  hairpin, esses, chicane, grandstands, curbs), Greenwood Endurance Raceway
+  (forest, flat-out uphill sweep, blind crest), Sierra Canyon Run
+  (point-to-point sprint with a ridge tunnel and gorge bridge)
 - **2 race modes**: Circuit (3–5 laps) and Sprint (point-to-point)
 - **7 AI opponents** with racing lines, braking-point planning, overtaking,
   occasional mistakes and three difficulty levels

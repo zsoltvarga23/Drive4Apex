@@ -101,11 +101,13 @@ export class AIController {
     // --- Speed planning: scan ahead, respect corner speeds + braking distance ---
     let targetSpeed = v.spec.topSpeed * this.params.speedFactor * this.skill;
     const scanStep = 8;
+    // Better-braking cars (notably the formula) commit deeper into corners.
+    const decel = this.params.decel * (0.6 + v.spec.braking / 30);
     for (let d = scanStep; d <= 80; d += scanStep) {
       const curv = Math.abs(track.sampleAt(v.trackDist + d).curvature);
       if (curv < 1e-4) continue;
       const cornerSpeed = Math.sqrt(this.params.latAccel / curv) * (0.8 + v.spec.handling * 0.35);
-      const allowedNow = Math.sqrt(cornerSpeed * cornerSpeed + 2 * this.params.decel * d);
+      const allowedNow = Math.sqrt(cornerSpeed * cornerSpeed + 2 * decel * d);
       targetSpeed = Math.min(targetSpeed, allowedNow);
     }
 

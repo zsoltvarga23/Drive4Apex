@@ -68,7 +68,9 @@ export class Vehicle {
     const c = this.controls;
     this.wallHit = 0;
 
-    const surface = this.offRoad ? 0.55 : 1;
+    // Formula slicks barely work off the asphalt — precision is the deal.
+    const offRoadGrip = this.spec.body === 'formula' ? 0.35 : 0.55;
+    const surface = this.offRoad ? offRoadGrip : 1;
     const topSpeed = this.spec.topSpeed * surface;
 
     // --- Longitudinal ---
@@ -92,7 +94,10 @@ export class Vehicle {
     // --- Steering ---
     // Turn authority ramps up from standstill, then tapers at high speed.
     const absSpeed = Math.abs(this.speed);
-    const speedFactor = clamp(absSpeed / 7, 0, 1) / (1 + Math.max(0, absSpeed - 22) * 0.022);
+    // Downforce keeps formula steering sharp at speed (smaller taper) —
+    // more cornering authority, and more rope to hang yourself with.
+    const taper = this.spec.body === 'formula' ? 0.012 : 0.022;
+    const speedFactor = clamp(absSpeed / 7, 0, 1) / (1 + Math.max(0, absSpeed - 22) * taper);
     const handbrakeBoost = c.handbrake ? 1.6 : 1;
     // Steering convention: steer +1 = turn RIGHT. In three.js right-handed
     // space a positive Y-rotation is a LEFT turn, so right steer must

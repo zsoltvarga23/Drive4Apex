@@ -60,10 +60,29 @@ export const CARS: CarSpec[] = [
     braking: 12.5,
     body: 'sport',
   },
+  {
+    // Premium reward car: best stats in every column, but its razor-sharp
+    // steering and severe off-road penalty punish sloppy lines. The price
+    // targets ~35-45 races of earnings — a genuine long-term goal for this
+    // economy (average payout is ~150-250 credits per race).
+    id: 'ax1',
+    name: 'AX-1 Formula',
+    topSpeed: 56,
+    accel: 13,
+    handling: 0.98,
+    braking: 16,
+    body: 'formula',
+    price: 7500,
+  },
 ];
 
 export function getCar(id: string): CarSpec {
   return CARS.find((c) => c.id === id) ?? CARS[0];
+}
+
+/** Free cars are always available; premium cars must be purchased. */
+export function isCarUnlocked(car: CarSpec, unlockedCars: string[]): boolean {
+  return !car.price || unlockedCars.includes(car.id);
 }
 
 /** Normalize a stat to 0..1 for UI bars. */

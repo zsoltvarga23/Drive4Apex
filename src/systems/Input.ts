@@ -9,6 +9,8 @@ import { clamp } from '../utils/math';
 export class Input {
   /** Fired on Escape/P — wired to pause by the Game. */
   onPause: (() => void) | null = null;
+  /** Fired on R — instant restart in time trial. */
+  onRestart: (() => void) | null = null;
   /** Fired on the very first interaction — used to unlock audio. */
   onFirstInteraction: (() => void) | null = null;
 
@@ -23,6 +25,7 @@ export class Input {
       if (e.repeat) return;
       this.keys.add(e.code);
       if (e.code === 'Escape' || e.code === 'KeyP') this.onPause?.();
+      if (e.code === 'KeyR') this.onRestart?.();
       // Stop arrows/space from scrolling the page.
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
         e.preventDefault();

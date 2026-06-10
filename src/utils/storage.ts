@@ -16,10 +16,14 @@ const DEFAULT_SETTINGS: Settings = {
 const DEFAULT_SAVE: SaveData = {
   credits: 0,
   unlockedColors: ['crimson', 'cobalt', 'pearl', 'graphite'],
+  unlockedCars: [],
   carId: 'comet',
   colorId: 'crimson',
   settings: DEFAULT_SETTINGS,
   bestLaps: {},
+  bestLapSectors: {},
+  sectorPBs: {},
+  bestSprints: {},
   racesPlayed: 0,
   racesWon: 0,
 };
