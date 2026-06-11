@@ -54,6 +54,10 @@ export interface Settings {
 
 /** Persistent player progression, stored in localStorage. */
 export interface SaveData {
+  /** Nickname shown on leaderboards ('' until the player picks one). */
+  playerName: string;
+  /** Anonymous persistent id — identifies this player across renames. */
+  playerId: string;
   credits: number;
   unlockedColors: string[];
   /** Ids of purchased premium cars (free cars are always available). */
@@ -71,4 +75,12 @@ export interface SaveData {
   bestSprints: Partial<Record<TrackId, number>>;
   racesPlayed: number;
   racesWon: number;
+  /** Career statistics (leaderboards & driver level). */
+  podiums: number;
+  /** Sum of finishing positions — divided by races for average finish. */
+  positionsSum: number;
+  /** Lifetime credits earned; drives the driver level. */
+  totalCreditsEarned: number;
+  /** Lifetime credits spent on paints and cars. */
+  creditsSpent: number;
 }

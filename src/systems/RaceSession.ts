@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Quality, RaceConfig, SaveData } from '../types';
 import { CARS, getCar } from '../config/cars';
 import { persistSave } from '../utils/storage';
+import { displayName, leaderboards, todayISO } from './Leaderboards';
 import { AI_COLOR_POOL } from '../config/colors';
 import { getTrack } from '../config/tracks';
 import { generateRacerNames } from '../config/names';
@@ -98,14 +99,15 @@ export class RaceSession {
 
     // Player starts at the back of the grid — earn that podium.
     const playerSpec = getCar(cfg.carId);
-    this.player = new Vehicle(playerSpec, cfg.colorHex, true, 'You');
+    this.player = new Vehicle(playerSpec, cfg.colorHex, true, displayName(this.save));
 
     // Time trial: an empty track, just the player versus the clock.
     const aiCount = cfg.mode === 'timetrial' ? 0 : AI_COUNT;
     // Formula races run a formula-only grid — a proper open-wheel series.
     this.isFormulaEvent = playerSpec.body === 'formula' && aiCount > 0;
 
-    const names = generateRacerNames(Math.max(1, aiCount)).slice(0, aiCount);
+    // AI opponents are race-local color: they never appear on leaderboards.
+    const names = aiCount > 0 ? generateRacerNames(aiCount) : [];
     const formula = CARS.find((c) => c.body === 'formula');
     const aiVehicles: Vehicle[] = names.map((name, i) => {
       let spec: typeof playerSpec;
@@ -178,7 +180,10 @@ export class RaceSession {
           persistSave(save);
           this.hud.showMessage('NEW BEST LAP!', 2200);
         } else {
-          this.hud.showMessage(isSessionBest ? 'BEST LAP!' : `LAP ${lapNum}`);
+          // After the final lap the finish banner takes over — no lap toast.
+          if (lapNum <= this.raceManager.lapsTotal) {
+            this.hud.showMessage(isSessionBest ? 'BEST LAP!' : `LAP ${lapNum}`);
+          }
           // Legacy best laps predate sector tracking; seed the delta
           // reference from the best lap we *have* timed sector-by-sector.
           if (isSessionBest && sectors.length === 3 && !save.bestLapSectors[trackId]) {
@@ -188,6 +193,23 @@ export class RaceSession {
         }
         this.hud.setLapHistory(this.raceManager.sessionLaps);
         this.hud.resetSectorsSoon();
+
+        // Post to the track-record board. Only laps with all three sectors
+        // completed in order qualify (anti-cheat: restarts and reverse
+        // line-crossings never reach this path with a full sector set).
+        if (sectors.length === 3) {
+          leaderboards.submitTime(
+            trackId, 'lap',
+            {
+              pid: save.playerId,
+              name: displayName(save),
+              carId: this.config.carId,
+              time: lapTime,
+              date: todayISO(),
+            },
+            this.track.length / 70,
+          );
+        }
       },
 
       onPlayerFinish: () => {

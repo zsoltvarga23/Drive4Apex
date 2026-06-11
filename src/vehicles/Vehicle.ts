@@ -32,6 +32,10 @@ export class Vehicle {
   finished = false;
   finishTime = 0;
   totalProgress = 0;
+  /** Race-time stamp when this car last crossed the start line. */
+  lapStartAt = 0;
+  /** Fastest full lap this race (0 = none yet) — feeds the leaderboards. */
+  bestLapTime = 0;
 
   // Per-frame event flags consumed by RaceSession (sound + particles).
   wallHit = 0; // impact intensity 0..1, reset each frame

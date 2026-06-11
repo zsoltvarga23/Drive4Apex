@@ -1,8 +1,11 @@
-import type { Difficulty, RaceConfig, RaceMode, SaveData, TrackId } from '../types';
+import type { CarBody, Difficulty, RaceConfig, RaceMode, SaveData, TrackId } from '../types';
 import { CARS, getCar, isCarUnlocked, statBars } from '../config/cars';
 import { COLORS, getColor } from '../config/colors';
 import { TRACKS, getTrack } from '../config/tracks';
 import type { Standing } from '../systems/RaceManager';
+import {
+  BODY_CLASS_LABELS, leaderboards, sanitizeName, vehicleLabel, type BoardMode,
+} from '../systems/Leaderboards';
 import { formatTime } from '../utils/math';
 
 /** The surface of Game that the menus drive (avoids a circular import). */
@@ -19,7 +22,7 @@ export interface GameAPI {
   uiClick(): void;
 }
 
-type ScreenId = 'main' | 'garage' | 'color' | 'track' | 'setup' | 'settings';
+type ScreenId = 'main' | 'garage' | 'color' | 'track' | 'setup' | 'settings' | 'leaderboard';
 
 /**
  * All menu screens and overlays, rendered as DOM over the 3D canvas.
@@ -35,6 +38,11 @@ export class Menus {
   private mode: RaceMode = 'circuit';
   private laps = 3;
   private difficulty: Difficulty = 'medium';
+
+  // Leaderboard view state (kept across visits within a session).
+  private lbTab: 'career' | 'records' | 'sprint' | 'personal' = 'career';
+  private lbTrack: TrackId = 'gp';
+  private lbClass: 'all' | CarBody = 'all';
 
   constructor(parent: HTMLElement, game: GameAPI) {
     this.game = game;
@@ -60,6 +68,7 @@ export class Menus {
       case 'track': this.renderTrack(el); break;
       case 'setup': this.renderSetup(el); break;
       case 'settings': this.renderSettings(el); break;
+      case 'leaderboard': this.renderLeaderboard(el); break;
     }
     this.root.appendChild(el);
     requestAnimationFrame(() => el.classList.add('visible'));
@@ -98,6 +107,7 @@ export class Menus {
       </div>`;
     const buttons = el.querySelector('.menu-buttons')!;
     buttons.appendChild(this.button('RACE', 'btn btn-primary', () => this.show('garage')));
+    buttons.appendChild(this.button('LEADERBOARDS', 'btn', () => this.show('leaderboard')));
     buttons.appendChild(this.button('SETTINGS', 'btn', () => this.show('settings')));
   }
 
@@ -140,6 +150,7 @@ export class Menus {
           } else if (save.credits >= (car.price ?? 0)) {
             this.game.uiClick();
             save.credits -= car.price ?? 0;
+            save.creditsSpent += car.price ?? 0;
             save.unlockedCars.push(car.id);
             save.carId = car.id;
             this.game.persist();
@@ -192,6 +203,7 @@ export class Menus {
           } else if (save.credits >= color.cost) {
             this.game.uiClick();
             save.credits -= color.cost;
+            save.creditsSpent += color.cost;
             save.unlockedColors.push(color.id);
             save.colorId = color.id;
             this.game.persist();
@@ -325,6 +337,8 @@ export class Menus {
     el.innerHTML = `
       <h2 class="heading">SETTINGS</h2>
       <div class="settings-panel">
+        <div class="setup-group"><label>DRIVER NAME (LEADERBOARDS)</label>
+          <input type="text" id="in-name" class="lb-name-input" maxlength="16" placeholder="Enter nickname" value="${esc(this.game.save.playerName)}"></div>
         <div class="setup-group"><label>GRAPHICS QUALITY</label><div class="seg" id="seg-quality"></div></div>
         <div class="setup-group"><label>MASTER VOLUME <span id="v-master">${pct(s.masterVolume)}</span></label>
           <input type="range" id="sl-master" min="0" max="100" value="${s.masterVolume * 100}"></div>
@@ -387,6 +401,13 @@ export class Menus {
     bindSlider('sl-sfx', 'v-sfx', (v) => (s.sfxVolume = v), pct);
     bindSlider('sl-sens', 'v-sens', (v) => (s.steeringSensitivity = v), (v) => `${v.toFixed(1)}x`);
 
+    const nameInput = el.querySelector<HTMLInputElement>('#in-name')!;
+    nameInput.addEventListener('change', () => {
+      this.game.save.playerName = sanitizeName(nameInput.value);
+      this.game.persist();
+      leaderboards.pushCareer(this.game.save);
+    });
+
     const nav = el.querySelector('.nav-row')!;
     nav.appendChild(this.button('RESET PROGRESS', 'btn btn-danger', () => {
       if (confirm('Erase all progress, credits and unlocks?')) {
@@ -395,6 +416,255 @@ export class Menus {
       }
     }));
     nav.appendChild(this.button('← BACK', 'btn btn-primary', () => this.show('main')));
+  }
+
+  // --------------------------------------------------------- Leaderboards
+
+  private renderLeaderboard(el: HTMLElement): void {
+    el.innerHTML = `<h2 class="heading">LEADERBOARDS</h2>`;
+    el.appendChild(this.buildLeaderboardPanel());
+    const nav = document.createElement('div');
+    nav.className = 'nav-row';
+    nav.appendChild(this.button('← BACK', 'btn btn-primary', () => this.show('main')));
+    el.appendChild(nav);
+  }
+
+  /** Tabbed leaderboard panel, shared by the menu screen and the in-race modal. */
+  private buildLeaderboardPanel(): HTMLElement {
+    const panel = document.createElement('div');
+    panel.className = 'lb-panel';
+    // Guards stale async refreshes from overwriting a newer view.
+    let renderSeq = 0;
+
+    const render = () => {
+      const seq = ++renderSeq;
+      panel.innerHTML = `
+        <div class="lb-name-row">
+          <span>RACING AS</span>
+          <input id="lb-name" maxlength="16" placeholder="Enter nickname" value="${esc(this.game.save.playerName)}">
+          <button class="seg-btn" id="lb-name-save">SAVE</button>
+        </div>
+        <div class="lb-tabs"></div>
+        <div class="lb-filters"></div>
+        <div class="lb-status">⟳ Syncing with shared leaderboard…</div>
+        <div class="lb-content"></div>`;
+
+      const nameInput = panel.querySelector<HTMLInputElement>('#lb-name')!;
+      panel.querySelector('#lb-name-save')!.addEventListener('click', () => {
+        this.game.uiClick();
+        this.game.save.playerName = sanitizeName(nameInput.value);
+        this.game.persist();
+        leaderboards.pushCareer(this.game.save);
+        render();
+      });
+
+      const status = panel.querySelector<HTMLElement>('.lb-status')!;
+      const setStatus = (online: boolean) => {
+        if (seq !== renderSeq || !panel.isConnected) return;
+        status.textContent = online
+          ? '● Online — shared global leaderboard'
+          : '○ Offline — showing local records only';
+        status.className = 'lb-status ' + (online ? 'online' : 'offline');
+      };
+
+      const tabHost = panel.querySelector<HTMLElement>('.lb-tabs')!;
+      const tabs: [typeof this.lbTab, string][] = [
+        ['career', 'CAREER'],
+        ['records', 'TRACK RECORDS'],
+        ['sprint', 'SPRINT RECORDS'],
+        ['personal', 'PERSONAL BESTS'],
+      ];
+      for (const [id, label] of tabs) {
+        const b = document.createElement('button');
+        b.className = 'seg-btn' + (this.lbTab === id ? ' active' : '');
+        b.textContent = label;
+        b.addEventListener('click', () => {
+          this.game.uiClick();
+          this.lbTab = id;
+          render();
+        });
+        tabHost.appendChild(b);
+      }
+
+      const filters = panel.querySelector<HTMLElement>('.lb-filters')!;
+      const content = panel.querySelector<HTMLElement>('.lb-content')!;
+
+      if (this.lbTab === 'career') {
+        filters.style.display = 'none';
+        content.innerHTML = this.careerTable();
+        void leaderboards.refreshCareers().then((online) => {
+          setStatus(online);
+          if (seq === renderSeq && panel.isConnected) content.innerHTML = this.careerTable();
+        });
+      } else if (this.lbTab === 'personal') {
+        filters.style.display = 'none';
+        status.textContent = '';
+        content.innerHTML = this.personalBests();
+      } else {
+        // Track + vehicle-class filters for the record boards.
+        for (const t of TRACKS) {
+          const b = document.createElement('button');
+          b.className = 'seg-btn' + (this.lbTrack === t.id ? ' active' : '');
+          b.textContent = t.name.split(' ')[0].toUpperCase();
+          b.title = t.name;
+          b.addEventListener('click', () => {
+            this.game.uiClick();
+            this.lbTrack = t.id;
+            render();
+          });
+          filters.appendChild(b);
+        }
+        const sel = document.createElement('select');
+        sel.className = 'lb-select';
+        sel.innerHTML =
+          `<option value="all">ALL CLASSES</option>` +
+          (Object.entries(BODY_CLASS_LABELS) as [CarBody, string][])
+            .map(([body, label]) => `<option value="${body}">${label.toUpperCase()}</option>`)
+            .join('');
+        sel.value = this.lbClass;
+        sel.addEventListener('change', () => {
+          this.lbClass = sel.value as 'all' | CarBody;
+          render();
+        });
+        filters.appendChild(sel);
+        const mode: BoardMode = this.lbTab === 'sprint' ? 'sprint' : 'lap';
+        content.innerHTML = this.recordsTable(this.lbTrack, mode);
+        void leaderboards.refreshRecords(this.lbTrack, mode).then((online) => {
+          setStatus(online);
+          if (seq === renderSeq && panel.isConnected) {
+            content.innerHTML = this.recordsTable(this.lbTrack, mode);
+          }
+        });
+      }
+    };
+
+    render();
+    return panel;
+  }
+
+  /** Career rankings: rivals + player, ranked by wins → level → earnings. */
+  private careerTable(): string {
+    const save = this.game.save;
+    const rows = leaderboards.careerRows(save);
+    const winRate = save.racesPlayed ? Math.round((save.racesWon / save.racesPlayed) * 100) : 0;
+    const avgFinish = save.racesPlayed ? (save.positionsSum / save.racesPlayed).toFixed(1) : '—';
+
+    const body = rows
+      .map(
+        (r, i) => `
+        <tr class="${r.pid === save.playerId ? 'player-row' : ''}">
+          <td>${i + 1}</td>
+          <td>${esc(r.name)}</td>
+          <td>${r.wins}</td>
+          <td>${r.level}</td>
+          <td>${r.creditsEarned.toLocaleString()}</td>
+          <td>${r.credits.toLocaleString()}</td>
+        </tr>`,
+      )
+      .join('');
+    return `
+      <table class="results-table lb-table">
+        <thead><tr><th>#</th><th>DRIVER</th><th>WINS</th><th>LVL</th><th>EARNED</th><th>CREDITS</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="lb-stats">
+        <span>Podiums <b>${save.podiums}</b></span>
+        <span>Win rate <b>${winRate}%</b></span>
+        <span>Avg finish <b>${avgFinish}</b></span>
+        <span>Races <b>${save.racesPlayed}</b></span>
+        <span>Spent <b>${save.creditsSpent.toLocaleString()} cr</b></span>
+      </div>
+      ${rows.length <= 1 ? '<p class="hint">You are the first driver here — other players join the board as they race.</p>' : ''}`;
+  }
+
+  /** Motorsport-style timing board: top 10 + the player's row if outside it. */
+  private recordsTable(trackId: TrackId, mode: BoardMode): string {
+    let entries = leaderboards.records(trackId, mode);
+    if (this.lbClass !== 'all') entries = entries.filter((e) => getCar(e.carId).body === this.lbClass);
+    if (entries.length === 0) {
+      return `<p class="hint">No ${mode === 'sprint' ? 'sprint runs' : 'lap times'} recorded here yet — set the pace!</p>`;
+    }
+
+    const myPid = this.game.save.playerId;
+    const leader = entries[0].time;
+    const row = (e: (typeof entries)[0], rank: number) => `
+      <tr class="${e.pid === myPid ? 'player-row' : ''}">
+        <td>${rank}</td>
+        <td>${esc(e.name)}</td>
+        <td>${vehicleLabel(e.carId)}</td>
+        <td>${formatTime(e.time)}</td>
+        <td>${rank === 1 ? '—' : `+${(e.time - leader).toFixed(2)}`}</td>
+        <td>${e.date}</td>
+      </tr>`;
+
+    const top = entries.slice(0, 10).map((e, i) => row(e, i + 1)).join('');
+    const playerIdx = entries.findIndex((e) => e.pid === myPid);
+    const playerOutside =
+      playerIdx >= 10
+        ? `<tr class="lb-gap-row"><td colspan="6">···</td></tr>${row(entries[playerIdx], playerIdx + 1)}`
+        : '';
+    return `
+      <table class="results-table lb-table">
+        <thead><tr><th>#</th><th>DRIVER</th><th>VEHICLE</th><th>${mode === 'sprint' ? 'SPRINT TIME' : 'LAP TIME'}</th><th>GAP</th><th>DATE</th></tr></thead>
+        <tbody>${top}${playerOutside}</tbody>
+      </table>`;
+  }
+
+  /** The player's own records: best lap & sprint per track, plus formula-only bests. */
+  private personalBests(): string {
+    const cell = (e?: { time: number; carId: string; date: string }) =>
+      e ? `<b>${formatTime(e.time)}</b><br><small>${vehicleLabel(e.carId)} · ${e.date}</small>` : '<span class="dim">—</span>';
+
+    const myPid = this.game.save.playerId;
+    const playerBest = (trackId: TrackId, mode: BoardMode, formulaOnly: boolean) => {
+      const mine = leaderboards
+        .records(trackId, mode)
+        .filter((e) => e.pid === myPid && (!formulaOnly || getCar(e.carId).body === 'formula'));
+      return mine.length ? mine.reduce((a, b) => (a.time <= b.time ? a : b)) : undefined;
+    };
+
+    const rows = TRACKS.map(
+      (t) => `
+      <tr>
+        <td>${t.name}</td>
+        <td>${cell(playerBest(t.id, 'lap', false))}</td>
+        <td>${cell(playerBest(t.id, 'sprint', false))}</td>
+      </tr>`,
+    ).join('');
+
+    const formulaRows = TRACKS.map(
+      (t) => `
+      <tr>
+        <td>${t.name}</td>
+        <td>${cell(playerBest(t.id, 'lap', true))}</td>
+        <td>${cell(playerBest(t.id, 'sprint', true))}</td>
+      </tr>`,
+    ).join('');
+
+    return `
+      <table class="results-table lb-table">
+        <thead><tr><th>TRACK</th><th>BEST LAP</th><th>BEST SPRINT</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <h3 class="lb-subhead">FORMULA RECORDS</h3>
+      <table class="results-table lb-table">
+        <thead><tr><th>TRACK</th><th>FORMULA LAP</th><th>FORMULA SPRINT</th></tr></thead>
+        <tbody>${formulaRows}</tbody>
+      </table>`;
+  }
+
+  /** In-race leaderboard access (e.g. from the time-trial pause menu). */
+  showLeaderboardModal(): void {
+    const el = document.createElement('div');
+    el.className = 'modal';
+    el.id = 'lb-modal';
+    const card = document.createElement('div');
+    card.className = 'modal-card lb-modal-card';
+    card.innerHTML = '<h2>LEADERBOARDS</h2>';
+    card.appendChild(this.buildLeaderboardPanel());
+    card.appendChild(this.button('CLOSE', 'btn btn-primary', () => el.remove()));
+    el.appendChild(card);
+    this.overlay.appendChild(el);
   }
 
   // ------------------------------------------------------------ Overlays
@@ -426,6 +696,7 @@ export class Menus {
     const buttons = el.querySelector('.modal-buttons')!;
     buttons.appendChild(this.button('RESUME', 'btn btn-primary', () => this.game.resumeRace()));
     buttons.appendChild(this.button('RESTART RACE', 'btn', () => this.game.restartRace()));
+    buttons.appendChild(this.button('LEADERBOARDS', 'btn', () => this.showLeaderboardModal()));
     buttons.appendChild(this.button('QUIT TO MENU', 'btn btn-danger', () => this.game.quitToMenu()));
     this.overlay.appendChild(el);
   }
@@ -468,7 +739,7 @@ export class Menus {
       .map((s) => `
         <tr class="${s.vehicle.isPlayer ? 'player-row' : ''}">
           <td>${s.position}</td>
-          <td>${s.vehicle.name}</td>
+          <td>${esc(s.vehicle.name)}</td>
           <td>${s.vehicle.spec.name}</td>
           <td>${formatTime(s.time)}${s.estimated ? '<i>*</i>' : ''}</td>
         </tr>`)
@@ -486,6 +757,10 @@ export class Menus {
       </div>`;
     const buttons = el.querySelector('.modal-buttons')!;
     buttons.appendChild(this.button('RACE AGAIN', 'btn btn-primary', () => this.game.restartRace()));
+    buttons.appendChild(this.button('LEADERBOARDS', 'btn', () => {
+      this.game.quitToMenu();
+      this.show('leaderboard');
+    }));
     buttons.appendChild(this.button('MAIN MENU', 'btn', () => this.game.quitToMenu()));
     this.overlay.appendChild(el);
   }
@@ -500,6 +775,10 @@ export class Menus {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/** Escape user-provided strings before inserting into innerHTML. */
+const esc = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Draw a small 2D outline of a track onto a preview canvas. */
 function drawTrackPreview(canvas: HTMLCanvasElement, points: [number, number, number][], accent: string): void {

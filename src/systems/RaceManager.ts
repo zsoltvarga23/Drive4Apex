@@ -81,6 +81,12 @@ export class RaceManager {
         // crossing (lap -1 → 0) only starts the clock — it isn't a lap.
         const completedFullLap = v.lap >= 0;
         v.lap++;
+        // Per-car lap timing (every car, for the track-record boards).
+        if (completedFullLap) {
+          const t = this.raceTime - v.lapStartAt;
+          if (t > 1 && (v.bestLapTime === 0 || t < v.bestLapTime)) v.bestLapTime = t;
+        }
+        v.lapStartAt = this.raceTime;
         if (v.isPlayer) {
           if (completedFullLap) {
             // The start line closes sector 3.
@@ -93,9 +99,8 @@ export class RaceManager {
             this.sessionLaps.push(lapTime);
             const isSessionBest = lapTime < this.playerBestLap;
             if (isSessionBest) this.playerBestLap = lapTime;
-            if (v.lap < this.lapsTotal) {
-              this.events.onPlayerLap(v.lap + 1, lapTime, [...this.currentSectors], isSessionBest);
-            }
+            // Always fire — the final lap must still reach the record books.
+            this.events.onPlayerLap(v.lap + 1, lapTime, [...this.currentSectors], isSessionBest);
           }
           this.playerLapStart = this.raceTime;
           this.sectorStart = this.raceTime;

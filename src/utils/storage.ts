@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const DEFAULT_SAVE: SaveData = {
+  playerName: '',
+  playerId: '',
   credits: 0,
   unlockedColors: ['crimson', 'cobalt', 'pearl', 'graphite'],
   unlockedCars: [],
@@ -26,6 +28,10 @@ const DEFAULT_SAVE: SaveData = {
   bestSprints: {},
   racesPlayed: 0,
   racesWon: 0,
+  podiums: 0,
+  positionsSum: 0,
+  totalCreditsEarned: 0,
+  creditsSpent: 0,
 };
 
 /** Load progression from localStorage, merging over defaults so new fields are safe. */
@@ -40,17 +46,30 @@ export function loadSave(): SaveData {
         localStorage.removeItem(LEGACY_KEY);
       }
     }
-    if (!raw) return structuredClone(DEFAULT_SAVE);
-    const parsed = JSON.parse(raw) as Partial<SaveData>;
-    return {
+    const parsed = raw ? (JSON.parse(raw) as Partial<SaveData>) : {};
+    const save: SaveData = {
       ...structuredClone(DEFAULT_SAVE),
       ...parsed,
       settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
       bestLaps: { ...(parsed.bestLaps ?? {}) },
     };
+    ensurePlayerId(save);
+    return save;
   } catch {
-    return structuredClone(DEFAULT_SAVE);
+    const save = structuredClone(DEFAULT_SAVE);
+    ensurePlayerId(save);
+    return save;
   }
+}
+
+/** Generate the anonymous player id once and persist it immediately. */
+function ensurePlayerId(save: SaveData): void {
+  if (save.playerId) return;
+  save.playerId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  persistSave(save);
 }
 
 export function persistSave(save: SaveData): void {
@@ -67,5 +86,7 @@ export function resetSave(): SaveData {
   } catch {
     /* ignore */
   }
-  return structuredClone(DEFAULT_SAVE);
+  const save = structuredClone(DEFAULT_SAVE);
+  ensurePlayerId(save);
+  return save;
 }

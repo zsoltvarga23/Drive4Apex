@@ -2,6 +2,10 @@
   command = "yarn build"
   publish = "dist"
 
+# Shared-leaderboard backend (Netlify Function + Netlify Blobs).
+[functions]
+  directory = "netlify/functions"
+
 [[headers]]
   for = "/assets/*"
   [headers.values]

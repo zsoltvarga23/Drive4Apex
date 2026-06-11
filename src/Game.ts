@@ -6,6 +6,7 @@ import { loadSave, persistSave, resetSave } from './utils/storage';
 import { AudioManager } from './audio/AudioManager';
 import { Input } from './systems/Input';
 import { RaceSession } from './systems/RaceSession';
+import { displayName, leaderboards, todayISO } from './systems/Leaderboards';
 import { MenuScene } from './ui/MenuScene';
 import { Menus, type GameAPI } from './ui/Menus';
 
@@ -48,6 +49,7 @@ export class Game implements GameAPI {
 
   constructor(root: HTMLElement) {
     this.save = loadSave();
+    leaderboards.init(this.save);
     this.audio = new AudioManager(this.save.settings);
     this.input = new Input();
 
@@ -300,6 +302,22 @@ export class Game implements GameAPI {
     this.save.racesPlayed++;
     if (playerRow.position === 1) this.save.racesWon++;
 
+    // Career statistics for the leaderboards and driver level.
+    this.save.totalCreditsEarned += earned;
+    this.save.positionsSum += playerRow.position;
+    if (playerRow.position <= 3) this.save.podiums++;
+
+    // Leaderboards are human-only: only the player's sprint time is posted.
+    if (s.config.mode === 'sprint' && !playerRow.estimated) {
+      leaderboards.submitTime(s.config.trackId, 'sprint', {
+        pid: this.save.playerId,
+        name: displayName(this.save),
+        carId: s.config.carId,
+        time: playerRow.time,
+        date: todayISO(),
+      }, s.track.length / 70);
+    }
+
     // Lap records are written live by the session as laps complete;
     // sprints additionally record the fastest total route time here.
     let newRecord = s.newLapRecord;
@@ -311,6 +329,8 @@ export class Game implements GameAPI {
       }
     }
     this.persist();
+    // Share the updated career snapshot with the global rankings.
+    leaderboards.pushCareer(this.save);
     this.menus.showResults(standings, earned, this.save.credits, newRecord);
   }
 

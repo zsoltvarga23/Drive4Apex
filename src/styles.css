@@ -330,6 +330,53 @@ input[type='range'] {
 .touch-brake { border-color: rgba(255, 93, 93, 0.5); }
 .touch-small { width: 56px; height: 56px; font-size: 1rem; }
 
+/* ========================== Leaderboards ========================== */
+.lb-panel {
+  width: min(760px, 94vw);
+  display: flex; flex-direction: column; gap: 12px; align-items: center;
+}
+.lb-tabs, .lb-filters { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.lb-content { width: 100%; overflow-x: auto; }
+.lb-table { font-size: 0.82rem; }
+.lb-table th { white-space: nowrap; }
+.lb-table td { white-space: nowrap; }
+.lb-table td small { color: var(--text-dim); font-size: 0.7rem; }
+.lb-table .dim { color: var(--text-dim); }
+.lb-gap-row td { text-align: center; color: var(--text-dim); padding: 2px; }
+.lb-select {
+  font: inherit; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.06em;
+  color: var(--text); background: var(--panel);
+  border: 1px solid var(--panel-border); border-radius: 8px;
+  padding: 8px 12px; cursor: pointer;
+}
+.lb-stats {
+  display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;
+  color: var(--text-dim); font-size: 0.8rem; margin-top: 10px;
+}
+.lb-stats b { color: var(--accent); }
+.lb-subhead {
+  margin-top: 16px; margin-bottom: 6px;
+  font-size: 0.85rem; letter-spacing: 0.2em; color: var(--accent-warm);
+}
+.lb-modal-card { max-width: min(820px, 94vw); }
+
+.lb-name-row {
+  display: flex; gap: 10px; align-items: center;
+  font-size: 0.75rem; letter-spacing: 0.16em; color: var(--text-dim);
+}
+.lb-name-row input, .lb-name-input {
+  font: inherit; font-weight: 700; font-size: 0.9rem;
+  color: var(--text); background: var(--panel);
+  border: 1px solid var(--panel-border); border-radius: 8px;
+  padding: 8px 12px; width: 180px;
+  outline: none;
+}
+.lb-name-row input:focus, .lb-name-input:focus { border-color: var(--accent); }
+
+.lb-status { font-size: 0.72rem; letter-spacing: 0.1em; color: var(--text-dim); min-height: 1em; }
+.lb-status.online { color: #2ecc71; }
+.lb-status.offline { color: var(--text-dim); }
+
 /* ====================== Sector timing & deltas ====================== */
 .hud-sectors {
   position: absolute; bottom: max(18px, env(safe-area-inset-bottom)); left: 50%;
