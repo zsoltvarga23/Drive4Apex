@@ -6,6 +6,9 @@ import type { Standing } from '../systems/RaceManager';
 import {
   BODY_CLASS_LABELS, leaderboards, sanitizeName, vehicleLabel, type BoardMode,
 } from '../systems/Leaderboards';
+import {
+  CURRENT_VERSION, markVersionSeen, searchPatchNotes, type PatchNote,
+} from '../systems/PatchNotes';
 import { formatTime } from '../utils/math';
 
 /** The surface of Game that the menus drive (avoids a circular import). */
@@ -22,7 +25,8 @@ export interface GameAPI {
   uiClick(): void;
 }
 
-type ScreenId = 'main' | 'garage' | 'color' | 'track' | 'setup' | 'settings' | 'leaderboard';
+type ScreenId =
+  | 'main' | 'garage' | 'color' | 'track' | 'setup' | 'settings' | 'leaderboard' | 'patchnotes';
 
 /**
  * All menu screens and overlays, rendered as DOM over the 3D canvas.
@@ -69,6 +73,7 @@ export class Menus {
       case 'setup': this.renderSetup(el); break;
       case 'settings': this.renderSettings(el); break;
       case 'leaderboard': this.renderLeaderboard(el); break;
+      case 'patchnotes': this.renderPatchNotes(el); break;
     }
     this.root.appendChild(el);
     requestAnimationFrame(() => el.classList.add('visible'));
@@ -104,10 +109,12 @@ export class Menus {
         <span>💰 ${save.credits} cr</span>
         <span>🏁 ${save.racesPlayed} races</span>
         <span>🏆 ${save.racesWon} wins</span>
-      </div>`;
+      </div>
+      <div class="version-tag">v${CURRENT_VERSION}</div>`;
     const buttons = el.querySelector('.menu-buttons')!;
     buttons.appendChild(this.button('RACE', 'btn btn-primary', () => this.show('garage')));
     buttons.appendChild(this.button('LEADERBOARDS', 'btn', () => this.show('leaderboard')));
+    buttons.appendChild(this.button('PATCH NOTES', 'btn', () => this.show('patchnotes')));
     buttons.appendChild(this.button('SETTINGS', 'btn', () => this.show('settings')));
   }
 
@@ -667,6 +674,57 @@ export class Menus {
     this.overlay.appendChild(el);
   }
 
+  // --------------------------------------------------------- Patch notes
+
+  private renderPatchNotes(el: HTMLElement): void {
+    el.innerHTML = `
+      <h2 class="heading">PATCH NOTES</h2>
+      <p class="hint">Current version: <b>v${CURRENT_VERSION}</b></p>
+      <input type="text" id="pn-search" class="lb-name-input pn-search" maxlength="40"
+        placeholder="Search versions, features, fixes…">
+      <div class="pn-list" id="pn-list"></div>
+      <div class="nav-row"></div>`;
+
+    const list = el.querySelector<HTMLElement>('#pn-list')!;
+    const renderList = (query: string) => {
+      const notes = searchPatchNotes(query);
+      list.innerHTML = notes.length
+        ? notes.map((n, i) => patchNoteHtml(n, i === 0 && !query)).join('')
+        : '<p class="hint">No patch notes match that search.</p>';
+    };
+    renderList('');
+
+    const search = el.querySelector<HTMLInputElement>('#pn-search')!;
+    search.addEventListener('input', () => renderList(search.value));
+
+    const nav = el.querySelector('.nav-row')!;
+    nav.appendChild(this.button('← BACK', 'btn btn-primary', () => this.show('main')));
+  }
+
+  /** "Game updated" popup shown once per new version for returning players. */
+  showUpdatePopup(note: PatchNote): void {
+    const el = document.createElement('div');
+    el.className = 'modal';
+    el.id = 'update-popup';
+    const card = document.createElement('div');
+    card.className = 'modal-card pn-popup';
+    card.innerHTML = `
+      <div class="pn-updated">🔔 DRIVE4APEX UPDATED</div>
+      <h2>v${esc(note.version)} — ${esc(note.title)}</h2>
+      <div class="pn-popup-body">${patchNoteSections(note)}</div>
+      <div class="modal-buttons"></div>`;
+    const dismiss = (thenShowAll: boolean) => {
+      markVersionSeen();
+      el.remove();
+      if (thenShowAll) this.show('patchnotes');
+    };
+    const buttons = card.querySelector('.modal-buttons')!;
+    buttons.appendChild(this.button('READ FULL PATCH NOTES', 'btn btn-primary', () => dismiss(true)));
+    buttons.appendChild(this.button('CONTINUE', 'btn', () => dismiss(false)));
+    el.appendChild(card);
+    this.overlay.appendChild(el);
+  }
+
   // ------------------------------------------------------------ Overlays
 
   showLoading(label: string, progress: number): void {
@@ -779,6 +837,34 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 /** Escape user-provided strings before inserting into innerHTML. */
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/** The three patch-note sections, headers omitted when a section is empty. */
+function patchNoteSections(n: PatchNote): string {
+  const section = (label: string, cls: string, items: string[]) =>
+    items.length
+      ? `<div class="pn-section ${cls}"><h4>${label}</h4><ul>${items
+          .map((i) => `<li>${esc(i)}</li>`)
+          .join('')}</ul></div>`
+      : '';
+  return (
+    section('New Features', 'pn-new', n.newFeatures) +
+    section('Improvements', 'pn-improved', n.improvements) +
+    section('Bug Fixes', 'pn-fixed', n.bugFixes)
+  );
+}
+
+/** One expandable version entry for the patch notes screen. */
+function patchNoteHtml(n: PatchNote, expanded: boolean): string {
+  return `
+    <details class="pn-entry"${expanded ? ' open' : ''}>
+      <summary>
+        <span class="pn-version">v${esc(n.version)}</span>
+        <span class="pn-title">${esc(n.title)}</span>
+        <span class="pn-date">${esc(n.releaseDate)}</span>
+      </summary>
+      <div class="pn-body">${patchNoteSections(n)}</div>
+    </details>`;
+}
 
 /** Draw a small 2D outline of a track onto a preview canvas. */
 function drawTrackPreview(canvas: HTMLCanvasElement, points: [number, number, number][], accent: string): void {

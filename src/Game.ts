@@ -7,6 +7,7 @@ import { AudioManager } from './audio/AudioManager';
 import { Input } from './systems/Input';
 import { RaceSession } from './systems/RaceSession';
 import { displayName, leaderboards, todayISO } from './systems/Leaderboards';
+import { PATCH_NOTES, isFirstRun, markVersionSeen, shouldShowUpdatePopup } from './systems/PatchNotes';
 import { MenuScene } from './ui/MenuScene';
 import { Menus, type GameAPI } from './ui/Menus';
 
@@ -93,6 +94,14 @@ export class Game implements GameAPI {
     this.previewCar(this.save.carId, getColor(this.save.colorId).hex);
     this.menus.show('main');
     document.getElementById('boot-loader')?.remove();
+
+    // Patch notes: announce new versions to returning players; first-time
+    // players just have the current version marked as seen (it's all new).
+    if (shouldShowUpdatePopup() && PATCH_NOTES[0]) {
+      this.menus.showUpdatePopup(PATCH_NOTES[0]);
+    } else if (isFirstRun()) {
+      markVersionSeen();
+    }
 
     this.renderer.setAnimationLoop(() => this.tick());
 

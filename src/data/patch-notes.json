@@ -1,0 +1,74 @@
+[
+  {
+    "version": "1.3.0",
+    "releaseDate": "2026-06-11",
+    "title": "Leaderboards Update",
+    "newFeatures": [
+      "Career Rankings leaderboard with driver levels and lifetime stats",
+      "Track Records and Sprint Records boards with gap-to-leader timing",
+      "Personal Bests section with separate Formula records",
+      "Driver nicknames with persistent anonymous identity",
+      "Shared online leaderboards (Netlify-hosted, automatic for all players)",
+      "Vehicle class recognition on all record boards"
+    ],
+    "improvements": [
+      "Leaderboards are human-only — AI opponents no longer appear",
+      "Offline-first sync: records set offline upload on the next visit",
+      "Server-side validation of submitted times and stats"
+    ],
+    "bugFixes": [
+      "Best laps set on the final lap of a race are now recorded correctly"
+    ]
+  },
+  {
+    "version": "1.2.0",
+    "releaseDate": "2026-06-10",
+    "title": "Formula Racing Update",
+    "newFeatures": [
+      "AX-1 Formula — unlockable open-wheel car (7,500 cr)",
+      "Formula Series: formula-only grids when racing the AX-1",
+      "Time Trial mode with instant restart (R) and session lap history",
+      "Motorsport sector timing with PB color coding (S1/S2/S3)",
+      "Live lap delta against your personal-best lap"
+    ],
+    "improvements": [
+      "AI with better brakes now commit deeper into corners",
+      "Sierra Canyon pre-selects Sprint mode as designed"
+    ],
+    "bugFixes": []
+  },
+  {
+    "version": "1.1.0",
+    "releaseDate": "2026-06-10",
+    "title": "Drive4Apex — Motorsport Tracks",
+    "newFeatures": [
+      "Apex International Circuit — GP venue with hairpin, esses and chicane",
+      "Greenwood Endurance Raceway — forest straights and a blind crest",
+      "Sierra Canyon Run — high-desert sprint with tunnel and gorge bridge",
+      "Track landmarks: curbs, grandstands, tunnels and bridges",
+      "New Drive4Apex identity, logo and wordmark"
+    ],
+    "improvements": [
+      "Startup steering-polarity validation prevents regressions"
+    ],
+    "bugFixes": [
+      "Fixed inverted steering — left now steers left, right steers right",
+      "Initial start-line crossing no longer counts as a best lap"
+    ]
+  },
+  {
+    "version": "1.0.0",
+    "releaseDate": "2026-06-10",
+    "title": "Initial Release",
+    "newFeatures": [
+      "Three themed tracks with circuit and sprint race modes",
+      "Six cars with distinct stats and ten unlockable paint colors",
+      "Seven AI opponents with three difficulty levels",
+      "Credits progression saved locally",
+      "Synthesized engine, effects and music — zero downloads",
+      "Desktop keyboard and mobile touch controls"
+    ],
+    "improvements": [],
+    "bugFixes": []
+  }
+]
